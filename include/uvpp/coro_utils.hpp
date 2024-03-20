@@ -43,15 +43,22 @@ struct coro_fn {
     constexpr bool await_ready() const noexcept { return false; }
     
     coro_fn(promise_type& callee_promise):
-        callee(callee_type::from_promise(callee_promise)) {}
+        callee(callee_type::from_promise(callee_promise)) {
+            callee_promise.retval_ptr = &retval;
+        }
+
     auto await_suspend(std::coroutine_handle<> ch) {
         callee.promise().caller = ch;
-        callee.promise().retval_ptr = &retval;
         return callee;
     }
     T await_resume() {
         return std::move(retval);
     }
+
+    // This method needs to be called if the coro_fn is not intended
+    // to be awaited.
+    void not_awaited() { callee.promise().caller = std::noop_coroutine(); }
+    void manual_resume() { callee.resume(); }
 
     struct promise_type {
         std::coroutine_handle<> caller;
@@ -75,11 +82,17 @@ struct coro_fn<void> {
     
     coro_fn(promise_type& callee_promise):
         callee(callee_type::from_promise(callee_promise)) {}
+
     auto await_suspend(std::coroutine_handle<> ch) {
         callee.promise().caller = ch;
         return callee;
     }
     void await_resume() {}
+
+    // This method needs to be called if the coro_fn is not intended
+    // to be awaited.
+    void not_awaited() { callee.promise().caller = std::noop_coroutine(); }
+    void manual_resume() { callee.resume(); }
 
     struct promise_type {
         std::coroutine_handle<> caller;
@@ -108,9 +121,14 @@ coro_fn<void> tsafe_barrier(size_t n) {
     std::atomic<size_t> count = 0;
     while (true) {
         co_await std::suspend_always{};
-        int local_count = ++count;
+        size_t local_count = ++count;
         if (local_count >= n) break;
     }
+}
+
+coro_fn<void> complete_flag(std::atomic<bool>& atomic_flag) {
+    atomic_flag = true;
+    co_return;
 }
 
 template <typename T>
@@ -184,19 +202,60 @@ using merge_fn = coro_fn<awaitable_merge_result<AwaitableTs...>>;
 // the result of co_await-ing this is the results of all given awaitables packed
 // in a tuple (in given order), where empty results (void and std::tuple<>) are
 // replaced with a marker object uvco::empty_slot
-template <typename... AwaitableTs>
+//
+// NOTE: input awaitables should be rvalues
+template <typename... AwaitableTs> requires (... && std::is_rvalue_reference_v<AwaitableTs&&>)
 detail::merge_fn<AwaitableTs...> all_completed(bool thread_safe, AwaitableTs&&... awaitables) {
-    static_assert(sizeof...(awaitables) > 0, "you should wait for something");
+    static_assert(sizeof...(awaitables) > 1, "too few awaitables");
     coro_fn<void> barrier_waiter = thread_safe
         ? detail::tsafe_barrier(sizeof...(awaitables) + 1)
         : detail::barrier(sizeof...(awaitables) + 1);
-    barrier_waiter.callee.resume(); // coro_fn is lazy, start it
-    auto check_dec_barrier = [&](bool suspended) { if (!suspended) { barrier_waiter.callee.resume(); } };
+    barrier_waiter.manual_resume(); // coro_fn is lazy, start it
+    auto check_dec_barrier = [&](bool suspended) { if (!suspended) { barrier_waiter.manual_resume(); } };
     (..., check_dec_barrier(detail::awaitable_trait<AwaitableTs>::start(awaitables, barrier_waiter.callee)));
     co_await barrier_waiter;
     co_return std::tuple(detail::awaitable_trait<AwaitableTs>::get_return(awaitables)...);
 }
 
+// run an awaitable but do not suspend current coroutine (and do not care about
+// its return value), useful for running awaitable in non-coroutines
+// returns true if the awaitable asked for a suspension
+//
+// NOTE: input awaitable should be rvalue
+template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
+bool unleash(AwaitableT&& awaitable) {
+    return detail::awaitable_trait<AwaitableT>::start(awaitable, std::noop_coroutine());
+}
+
+// manage awaitables in synchronous functions
+// to use on multiple awaitables, use with all_completed
+//
+// NOTE: input awaitable should be rvalue
+template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
+struct synced_awaitable {
+    std::atomic<bool> flag = false;
+    AwaitableT wrapped;
+    synced_awaitable(AwaitableT&& awaitable) : wrapped(awaitable) {}
+    void start() {
+        coro_fn<void> cb = detail::complete_flag(flag); cb.not_awaited();
+        bool suspended = detail::awaitable_trait<AwaitableT>::start(wrapped, cb.callee);
+        if (!suspended) { cb.manual_resume(); }
+    }
+    void join() { flag.wait(false); }
+    detail::awaitable_trait<AwaitableT>::result_type result() {
+        return detail::awaitable_trait<AwaitableT>::get_return(wrapped);
+    }
+};
+
+// function shortcut for synced_awaitable
+//
+// NOTE: input awaitable should be rvalue
+template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
+detail::awaitable_trait<AwaitableT>::result_type run_join(AwaitableT&& awaitable) {
+    synced_awaitable<AwaitableT> synced(std::move(awaitable));
+    synced.start(); synced.join();
+    return synced.result();
+}
 
 } // namespace uvco
 
