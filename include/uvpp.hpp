@@ -13,5 +13,7 @@
 #include "uvpp/coro_api/fs.hpp"
 #include "uvpp/coro_api/watchers.hpp"
 
+#include "uvpp/windows_compat.hpp"
+
 
 #endif // __UVPP_HPP__

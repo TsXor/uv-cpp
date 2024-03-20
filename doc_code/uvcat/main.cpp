@@ -58,6 +58,7 @@ uvco::coro_task cat(uv_loop_t* loop, char* filename) try {
 }
 
 int main(int argc, char **argv) {
+    uvpp::make_windows_encoding_happy(argc, argv);
     auto loop = uvpp::default_loop();
     cat(loop, argv[1]);
     loop.run();
