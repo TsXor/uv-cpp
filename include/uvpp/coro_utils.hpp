@@ -128,6 +128,7 @@ UVPP_FN coro_fn<void> tsafe_barrier(size_t n) {
 
 UVPP_FN coro_fn<void> complete_flag(std::atomic<bool>& atomic_flag) {
     atomic_flag = true;
+    atomic_flag.notify_all();
     co_return;
 }
 
