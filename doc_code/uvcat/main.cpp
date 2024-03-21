@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <unordered_map>
 #include <uvpp.hpp>
+#include <uvpp/funcptr_table/fs.hpp>
 
 
 uvco::coro_task cat(uv_loop_t* loop, char* filename) try {
@@ -40,19 +41,19 @@ uvco::coro_task cat(uv_loop_t* loop, char* filename) try {
     // "internal" fault happened: libuv loop refused to register our
     // coroutine to be continued later for some reason. (I think this
     // is an unrecoverable fault ;) )
+    // Note: giving non-utf-8 parameter to libuv filesystem API is a
+    // cause of such exceptions as well. On Windows, libuv converts
+    // utf-8 parameter to utf-16 (Windows WCHAR encoding) before the
+    // POST action. If parameter is not utf-8, converting will fail
+    // before any operation is done.
     // However, this has nothing to do with the result of filesystem
     // operation: an exception won't be thrown if a file is not found,
     // have no permission to read/write, etc. You should check if the
     // result field is negative.
     
-    static const std::unordered_map<void*, const char*> fn_name_map = {
-        {(void*)uv_fs_open, "uv_fs_open"},
-        {(void*)uv_fs_read, "uv_fs_read"},
-        {(void*)uv_fs_write, "uv_fs_write"}
-    };
-    auto fn_name_map_it = fn_name_map.find(err.func_ptr);
-    const char* fn_name = fn_name_map_it == fn_name_map.end()
-        ? "<unknown>" : fn_name_map_it->second;
+    const char* fn_name;
+    try { fn_name = uvpp::fs::func_names.at(err.func_ptr); }
+    catch(const std::out_of_range& err) { fn_name = "<unknown>"; }
     fprintf(stderr, "internal error in libuv function %s: %s\n", fn_name, err.str());
     co_return;
 }

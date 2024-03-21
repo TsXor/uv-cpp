@@ -1,7 +1,9 @@
 from pycparser import c_ast
 from .interfaces import INodeHandler
 from .ctype_utils import *
+from .libuv_conventions import *
 from . import callback_wrap
+from . import funcptr_table
 
 
 class UVFuncHandler(INodeHandler):
@@ -21,6 +23,12 @@ class UVFuncHandler(INodeHandler):
         param_names = [] if node.args is None else \
             [decl.name for decl in node.args.params if type(decl) == c_ast.Decl]
         if callback_wrap.is_async_api(fn_type):
-            callback_wrap.process_information(fn_type, fn_name, param_names)
+            cb_kw = CALLBACK_TYPES_TO_KW[fn_type.params[-1]] # type: ignore
+            try:
+                fn_clean_name = check_async_api(fn_type, fn_name, cb_kw)
+                callback_wrap.process_information(fn_type, cb_kw, fn_clean_name, param_names)
+                funcptr_table.process_information(fn_type, cb_kw, fn_clean_name, param_names)
+            except ValueError as verr: 
+                print(f'Ignored: {verr}')
         return True
     
