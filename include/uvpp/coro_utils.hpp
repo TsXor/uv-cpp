@@ -109,7 +109,7 @@ static inline constexpr auto empty_slot = empty_slot_t();
 
 namespace detail {
 
-coro_fn<void> barrier(size_t n) {
+UVPP_FN coro_fn<void> barrier(size_t n) {
     size_t count = 0;
     while (true) {
         co_await std::suspend_always{};
@@ -117,7 +117,7 @@ coro_fn<void> barrier(size_t n) {
     }
 }
 
-coro_fn<void> tsafe_barrier(size_t n) {
+UVPP_FN coro_fn<void> tsafe_barrier(size_t n) {
     std::atomic<size_t> count = 0;
     while (true) {
         co_await std::suspend_always{};
@@ -126,7 +126,7 @@ coro_fn<void> tsafe_barrier(size_t n) {
     }
 }
 
-coro_fn<void> complete_flag(std::atomic<bool>& atomic_flag) {
+UVPP_FN coro_fn<void> complete_flag(std::atomic<bool>& atomic_flag) {
     atomic_flag = true;
     co_return;
 }
@@ -205,7 +205,7 @@ using merge_fn = coro_fn<awaitable_merge_result<AwaitableTs...>>;
 //
 // NOTE: input awaitables should be rvalues
 template <typename... AwaitableTs> requires (... && std::is_rvalue_reference_v<AwaitableTs&&>)
-detail::merge_fn<AwaitableTs...> all_completed(bool thread_safe, AwaitableTs&&... awaitables) {
+UVPP_FN detail::merge_fn<AwaitableTs...> all_completed(bool thread_safe, AwaitableTs&&... awaitables) {
     static_assert(sizeof...(awaitables) > 1, "too few awaitables");
     coro_fn<void> barrier_waiter = thread_safe
         ? detail::tsafe_barrier(sizeof...(awaitables) + 1)
@@ -223,7 +223,7 @@ detail::merge_fn<AwaitableTs...> all_completed(bool thread_safe, AwaitableTs&&..
 //
 // NOTE: input awaitable should be rvalue
 template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
-bool unleash(AwaitableT&& awaitable) {
+UVPP_FN bool unleash(AwaitableT&& awaitable) {
     return detail::awaitable_trait<AwaitableT>::start(awaitable, std::noop_coroutine());
 }
 
@@ -251,7 +251,7 @@ struct synced_awaitable {
 //
 // NOTE: input awaitable should be rvalue
 template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
-detail::awaitable_trait<AwaitableT>::result_type run_join(AwaitableT&& awaitable) {
+UVPP_FN detail::awaitable_trait<AwaitableT>::result_type run_join(AwaitableT&& awaitable) {
     synced_awaitable<AwaitableT> synced(std::move(awaitable));
     synced.start(); synced.join();
     return synced.result();

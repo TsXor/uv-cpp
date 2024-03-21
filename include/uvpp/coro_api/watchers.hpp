@@ -19,20 +19,20 @@ UVPP_LOOP_WATCHER_FUNC_DEFINE(check)
 UVPP_LOOP_WATCHER_FUNC_DEFINE(idle)
 
 // returns std::suspend_always, just a semantic shortcut
-std::suspend_always next_loop() { return {}; }
+UVPP_FN std::suspend_always next_loop() { return {}; }
 
 } // namespace uvco::watchers
 
 namespace uvco::utils {
 
 // suspend execution and resume at next loop
-coro_fn<void> interrupt(uv_idle_t* idler) {
+UVPP_FN coro_fn<void> interrupt(uv_idle_t* idler) {
     co_await watchers::start(idler);
     watchers::stop(idler);
 }
 
 // suspend execution and resume after N loops
-coro_fn<void> sleep(uv_idle_t* idler, size_t n_loops) {
+UVPP_FN coro_fn<void> sleep(uv_idle_t* idler, size_t n_loops) {
     size_t past_loops = 0;
     co_await watchers::start(idler);
     while (past_loops < n_loops) {
