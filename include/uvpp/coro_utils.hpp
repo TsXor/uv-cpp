@@ -6,6 +6,7 @@
 #include <atomic>
 #include <coroutine>
 #include <type_traits>
+#include <optional>
 #include <utility>
 
 
@@ -33,12 +34,14 @@ struct switch_to_other {
 
 // wraps coroutine like an async function
 // won't be executed unless you co_await it
+// Note: returned object will be at least constructed once and moved once.
+//       If you hate such behaviour, consider using reference parameters to output value.
 template <typename T>
 struct coro_fn {
     struct promise_type;
     using callee_type = std::coroutine_handle<promise_type>;
     callee_type callee;
-    T retval;
+    std::optional<T> retval = std::nullopt;
     
     constexpr bool await_ready() const noexcept { return false; }
     
@@ -46,25 +49,23 @@ struct coro_fn {
         callee(callee_type::from_promise(callee_promise)) {
             callee_promise.retval_ptr = &retval;
         }
+    coro_fn(const coro_fn<T>&) = delete;
+    coro_fn(coro_fn<T>&&) = default;
+    ~coro_fn() = default;
 
     auto await_suspend(std::coroutine_handle<> ch) {
         callee.promise().caller = ch;
         return callee;
     }
-    T await_resume() {
-        return std::move(retval);
-    }
-
-    // This method needs to be called if the coro_fn is not intended
-    // to be awaited.
-    void not_awaited() { callee.promise().caller = std::noop_coroutine(); }
+    T&& await_resume() { return *std::move(retval); }
     void manual_resume() { callee.resume(); }
 
     struct promise_type {
-        std::coroutine_handle<> caller;
-        T* retval_ptr = nullptr;
+        std::coroutine_handle<> caller = std::noop_coroutine();
+        std::optional<T>* retval_ptr = nullptr;
         coro_fn get_return_object() { return { *this }; }
-        void return_value(T&& ret) { if (retval_ptr) *retval_ptr = std::move(ret); }
+        template <typename RetT>
+        void return_value(RetT&& ret) { if (retval_ptr) retval_ptr->emplace(std::move(ret)); }
         std::suspend_always initial_suspend() { return {}; }
         switch_to_other final_suspend() noexcept { return { caller }; }
         void unhandled_exception() {}
@@ -82,20 +83,19 @@ struct coro_fn<void> {
     
     coro_fn(promise_type& callee_promise):
         callee(callee_type::from_promise(callee_promise)) {}
+    coro_fn(const coro_fn<void>&) = delete;
+    coro_fn(coro_fn<void>&&) = default;
+    ~coro_fn() = default;
 
     auto await_suspend(std::coroutine_handle<> ch) {
         callee.promise().caller = ch;
         return callee;
     }
     void await_resume() {}
-
-    // This method needs to be called if the coro_fn is not intended
-    // to be awaited.
-    void not_awaited() { callee.promise().caller = std::noop_coroutine(); }
     void manual_resume() { callee.resume(); }
 
     struct promise_type {
-        std::coroutine_handle<> caller;
+        std::coroutine_handle<> caller = std::noop_coroutine();
         coro_fn get_return_object() { return { *this }; }
         void return_void() {}
         std::suspend_always initial_suspend() { return {}; }
@@ -177,7 +177,10 @@ struct awaitable_trait {
         hd.resume(); return true;
     }
 
-    static auto get_return(T& waiter) {
+    static auto&& get_return(T& waiter) {
+        return waiter.await_resume();
+    }
+    static auto&& get_return_replace_empty(T& waiter) {
         if constexpr (replace_empty_type<eval_type>::is_empty) {
             return empty_slot;
         } else {
@@ -215,7 +218,7 @@ UVPP_FN detail::merge_fn<AwaitableTs...> all_completed(bool thread_safe, Awaitab
     auto check_dec_barrier = [&](bool suspended) { if (!suspended) { barrier_waiter.manual_resume(); } };
     (..., check_dec_barrier(detail::awaitable_trait<AwaitableTs>::start(awaitables, barrier_waiter.callee)));
     co_await barrier_waiter;
-    co_return std::tuple(detail::awaitable_trait<AwaitableTs>::get_return(awaitables)...);
+    co_return std::tuple(detail::awaitable_trait<AwaitableTs>::get_return_replace_empty(awaitables)...);
 }
 
 // run an awaitable but do not suspend current coroutine (and do not care about
@@ -235,10 +238,10 @@ UVPP_FN bool unleash(AwaitableT&& awaitable) {
 template <typename AwaitableT> requires std::is_rvalue_reference_v<AwaitableT&&>
 struct synced_awaitable {
     std::atomic<bool> flag = false;
-    AwaitableT wrapped;
-    synced_awaitable(AwaitableT&& awaitable) : wrapped(awaitable) {}
+    AwaitableT&& wrapped;
+    synced_awaitable(AwaitableT&& awaitable) : wrapped(std::move(awaitable)) {}
     void start() {
-        coro_fn<void> cb = detail::complete_flag(flag); cb.not_awaited();
+        coro_fn<void> cb = detail::complete_flag(flag);
         bool suspended = detail::awaitable_trait<AwaitableT>::start(wrapped, cb.callee);
         if (!suspended) { cb.manual_resume(); }
     }
