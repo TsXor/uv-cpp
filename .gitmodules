@@ -1,0 +1,3 @@
+[submodule "extlibs/coutils"]
+	path = extlibs/coutils
+	url = https://github.com/TsXor/coutils.git

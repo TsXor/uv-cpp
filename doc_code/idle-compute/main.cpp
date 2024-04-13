@@ -1,10 +1,11 @@
 #include <stdio.h>
+#include <coutils.hpp>
 #include <uvpp.hpp>
 
 
 constexpr int stdin_fd = 0;
 
-uvco::coro_fn<void> crunch_away(uv_idle_t* handle) {
+coutils::async_fn<void> crunch_away(uv_idle_t* handle) {
     co_await uvco::watchers::start(handle);
     // - compute extra-terrestrial life
     // - fold proteins
@@ -15,13 +16,13 @@ uvco::coro_fn<void> crunch_away(uv_idle_t* handle) {
     uvco::watchers::stop(handle);
 }
 
-uvco::coro_task watch_stdin(uv_loop_t* loop) {
+coutils::async_fn<void> watch_stdin(uv_loop_t* loop) {
     uvpp::watchers::idle idler(loop);
     uvpp::fs::request read_req;
     char buffer[1024]; uvpp::buf_view bufv(buffer, 1024);
     while (true) {
         try {
-            co_await uvco::all_completed(false,
+            co_await coutils::all_completed(
                 uvco::fs::read(loop, read_req, stdin_fd, &bufv, 1, -1),
                 crunch_away(idler)
             );
@@ -51,6 +52,6 @@ uvco::coro_task watch_stdin(uv_loop_t* loop) {
 int main() {
     auto loop = uvpp::default_loop();
     uvpp::close_default_loop_atexit();
-    watch_stdin(loop);
+    coutils::sync::unleash(watch_stdin(loop));
     return loop.run();
 }

@@ -9,7 +9,6 @@
 #include "uvpp/structs/watchers.hpp"
 #include "uvpp/structs/misc.hpp"
 
-#include "uvpp/coro_utils.hpp"
 #include "uvpp/coro_api/fs.hpp"
 #include "uvpp/coro_api/watchers.hpp"
 

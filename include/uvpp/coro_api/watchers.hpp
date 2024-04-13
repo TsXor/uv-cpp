@@ -4,9 +4,9 @@
 
 #include <coroutine>
 #include <uv.h>
+#include <coutils.hpp>
 #include "uvpp/type_magic.hpp"
 #include "uvpp/macros.hpp"
-#include "uvpp/coro_utils.hpp"
 
 namespace uvco::watchers {
 
@@ -26,13 +26,13 @@ UVPP_FN std::suspend_always next_loop() { return {}; }
 namespace uvco::utils {
 
 // suspend execution and resume at next loop
-UVPP_FN coro_fn<void> interrupt(uv_idle_t* idler) {
+UVPP_FN coutils::async_fn<void> interrupt(uv_idle_t* idler) {
     co_await watchers::start(idler);
     watchers::stop(idler);
 }
 
 // suspend execution and resume after N loops
-UVPP_FN coro_fn<void> sleep(uv_idle_t* idler, size_t n_loops) {
+UVPP_FN coutils::async_fn<void> sleep(uv_idle_t* idler, size_t n_loops) {
     size_t past_loops = 0;
     co_await watchers::start(idler);
     while (past_loops < n_loops) {

@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include <coutils.hpp>
 #include <uvpp.hpp>
 
 
-uvco::coro_task do_idle(uvpp::loop_view loop) {
+coutils::async_fn<void> do_idle(uvpp::loop_view loop) {
     uvpp::watchers::idle handle(loop);
     int64_t counter = 0;
     co_await uvco::watchers::start(handle);
@@ -17,7 +18,7 @@ uvco::coro_task do_idle(uvpp::loop_view loop) {
     
 }
 
-uvco::coro_task do_prepare(uv_loop_t* loop) {
+coutils::async_fn<void> do_prepare(uv_loop_t* loop) {
     uvpp::watchers::prepare handle(loop);
     co_await uvco::watchers::start(handle);
     printf("Prep callback\n");
@@ -25,8 +26,8 @@ uvco::coro_task do_prepare(uv_loop_t* loop) {
 
 int main() {
     auto loop = uvpp::default_loop();
-    do_idle(loop);
-    do_prepare(loop);
+    coutils::sync::unleash(do_idle(loop));
+    coutils::sync::unleash(do_prepare(loop));
     loop.run();
     return 0;
 }

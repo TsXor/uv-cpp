@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include <coutils.hpp>
 #include <uvpp.hpp>
 
 
-uvco::coro_task wait_for_a_while(uv_idle_t* handle) {
+coutils::async_fn<void> wait_for_a_while(uv_idle_t* handle) {
     int64_t counter = 0;
     co_await uvco::watchers::start(handle);
     while (counter < 10e6) {
@@ -17,7 +18,7 @@ int main() {
     uvpp::close_default_loop_atexit();
 
     uvpp::watchers::idle idler(loop);
-    wait_for_a_while(idler);
+    coutils::sync::unleash(wait_for_a_while(idler));
 
     printf("Idling...\n");
     loop.run();

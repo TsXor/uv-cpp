@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unordered_map>
+#include <coutils.hpp>
 #include <uvpp.hpp>
 #include <uvpp/funcptr_table/fs.hpp>
 
 
-uvco::coro_task cat(uv_loop_t* loop, char* filename) try {
+coutils::async_fn<void> cat(uv_loop_t* loop, char* filename) try {
     uvpp::fs::request open_req, read_req, write_req, close_req;
     
     co_await uvco::fs::open(loop, open_req, filename, O_RDONLY, 0);
@@ -61,7 +62,7 @@ uvco::coro_task cat(uv_loop_t* loop, char* filename) try {
 int main(int argc, char **argv) {
     uvpp::make_windows_encoding_happy(argc, argv);
     auto loop = uvpp::default_loop();
-    cat(loop, argv[1]);
+    coutils::sync::unleash(cat(loop, argv[1]));
     loop.run();
     return 0;
 }
